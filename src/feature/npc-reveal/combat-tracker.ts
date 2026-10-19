@@ -101,8 +101,10 @@ export function maskNativeCombatTracker(html: HTMLElement): void {
     const combatant = game.combat?.combatants?.get?.((entry as HTMLElement).dataset?.combatantId!); if (!combatant) continue;
     const actor = combatant.actor ?? null; if (actor?.type === "character") continue;
     if (!isNpcRevealed(actor, combatant.token ?? null)) {
-      const nameEl = entry.querySelector(".token-name h4") ?? entry.querySelector(".combatant-name") ?? entry.querySelector(".token-name");
-      if (nameEl) nameEl.textContent = maskLabel();
+      const label = maskLabel();
+      const nameEl = entry.querySelector(".token-name > .name");
+      if (nameEl) nameEl.textContent = label;
+      entry.querySelector(".token-image")?.setAttribute("alt", label);
     }
   }
 }
@@ -115,7 +117,7 @@ export function markRevealedInCombatTracker(html: HTMLElement): void {
     const combatant = game.combat?.combatants?.get?.((entry as HTMLElement).dataset?.combatantId!); if (!combatant) continue;
     const actor = combatant.actor ?? null; if (!actor || actor.type === "character") continue;
     if (isNpcPermanentlyRevealed(actor)) {
-      const nameEl = entry.querySelector(".token-name h4") ?? entry.querySelector(".combatant-name") ?? entry.querySelector(".token-name");
+      const nameEl = entry.querySelector(".token-name > .name");
       if (nameEl && !nameEl.querySelector(".bsr-perm-badge")) {
         const badge = document.createElement("i");
         badge.className = "fa-solid fa-eye bsr-perm-badge";

@@ -1,8 +1,9 @@
 import { MOD } from "../core/constants.js";
 import { shouldHideForeignSecrets } from "../core/policy/chat-privacy.js";
-import { isDeathSaveMessage } from "../core/policy/roll-classification.js";
+import { getRollMetadata, isDeathSaveMessage } from "../core/policy/roll-classification.js";
 import { dbgWarn, dbgDebug } from "../debug/logger.js";
 import { installAudioPatches, registerAudioHooks } from "./audio-suppression.js";
+import { redactRollResults } from "./chat-redaction.js";
 const L = (k, fb) => { try {
     const t = game?.i18n?.localize?.(k);
     return (t && t !== k) ? t : (fb ?? k);
@@ -65,8 +66,12 @@ function readChangedValue(changed, path) {
 function isPublicRevealUpdate(message, changed) {
     if (!isBsrSecret(message))
         return false;
+    if (!isSecret(message))
+        return false;
     const nextBlind = readChangedValue(changed, "blind");
     const nextWhisper = readChangedValue(changed, "whisper");
+    if (nextBlind === undefined && nextWhisper === undefined)
+        return false;
     const effectiveBlind = nextBlind === undefined ? !!message?.blind : nextBlind === true;
     const effectiveWhisper = Array.isArray(nextWhisper) ? nextWhisper : whisperIds(message);
     return effectiveBlind === false && Array.isArray(effectiveWhisper) && effectiveWhisper.length === 0;
@@ -424,38 +429,6 @@ Hooks.on("closeChatPopout", (_app, html) => {
     }
     catch { /* ignore */ }
 });
-// ---- Blind-result redaction ----
-function redactBlindResults(html) {
-    const scope = html.querySelector(".message-content") ?? html;
-    for (const el of scope.querySelectorAll(".dice-total")) {
-        if (el instanceof HTMLElement)
-            el.textContent = "??";
-    }
-    for (const el of scope.querySelectorAll([
-        ".dice-formula",
-        ".dice-tooltip",
-        ".dice-tooltip-collapser",
-        ".inline-roll .dice-tooltip",
-        ".inline-roll .collapse-toggle"
-    ].join(","))) {
-        el.remove();
-    }
-    for (const el of scope.querySelectorAll(".inline-result, .inline-roll")) {
-        if (el instanceof HTMLElement) {
-            el.textContent = "??";
-            el.removeAttribute("data-tooltip");
-        }
-    }
-    for (const el of scope.querySelectorAll(".success, .failure, .critical, .fumble")) {
-        if (el instanceof HTMLElement) {
-            el.classList.remove("success", "failure", "critical", "fumble");
-            el.removeAttribute("data-result");
-        }
-    }
-    if (html instanceof HTMLElement) {
-        html.removeAttribute("data-result");
-    }
-}
 // ---- Blind-Roller-Chat-Masking classification ----
 function isSavingThrowMessage(message) {
     try {
@@ -464,14 +437,11 @@ function isSavingThrowMessage(message) {
             return true;
         if (bsrKind === "abilityCheck" || bsrKind === "skill")
             return false;
-        const d5 = message?.flags?.dnd5e ?? {};
-        const rollType = d5?.roll?.type ?? d5?.type ?? d5?.rollType ?? null;
-        const hasAbility = !!(d5?.roll?.abilityId || d5?.abilityId);
-        const hasSkill = !!(d5?.roll?.skillId || d5?.skillId || d5?.roll?.skill || d5?.skill);
+        const { type: rollType, ability, skill, tool } = getRollMetadata(message);
         const isDeath = isDeathSaveMessage(message);
-        if (isDeath || hasSkill)
+        if (isDeath || skill || tool)
             return false;
-        return rollType === "save" || (hasAbility && rollType !== "ability" && rollType !== "check");
+        return rollType === "save" || (!!ability && !rollType);
     }
     catch {
         return false;
@@ -484,17 +454,78 @@ function isAbilityCheckMessage(message) {
             return true;
         if (bsrKind === "save" || bsrKind === "skill")
             return false;
-        const d5 = message?.flags?.dnd5e ?? {};
-        const rollType = d5?.roll?.type ?? d5?.type ?? d5?.rollType ?? null;
-        const hasAbility = !!(d5?.roll?.abilityId || d5?.roll?.ability || d5?.abilityId || d5?.ability);
-        const hasSkill = !!(d5?.roll?.skillId || d5?.skillId || d5?.roll?.skill || d5?.skill);
+        const { type: rollType, ability, skill, tool } = getRollMetadata(message);
         const isDeath = isDeathSaveMessage(message);
-        if (isDeath || hasSkill)
+        if (isDeath || skill || tool)
             return false;
-        return rollType === "ability" || rollType === "check" || (hasAbility && rollType !== "save");
+        return rollType === "ability" || rollType === "check" || (!!ability && !rollType);
     }
     catch {
         return false;
+    }
+}
+function shouldHideBlindRollerCard(message) {
+    if (game.user?.isGM || message.author?.id !== game.user?.id || !isBsrBlind(message) || isRevealedToCurrentUser(message))
+        return false;
+    const setting = isDeathSaveMessage(message) ? "blindRollersDeathSaveChat"
+        : isSavingThrowMessage(message) ? "blindRollersSaveChat"
+            : isAbilityCheckMessage(message) ? "blindRollersAbilityChat" : "blindRollersChat";
+    return game.settings.get(MOD, setting) === true;
+}
+function shouldRedactResults(message) {
+    if (game.user?.isGM || isRevealedToCurrentUser(message))
+        return false;
+    if (isBsrBlind(message))
+        return true;
+    if (isBsrPrivate(message))
+        return message.author?.id !== game.user?.id;
+    return isSecret(message) && !isAddressedToMe(message);
+}
+const hiddenLinkedDisplays = new WeakMap();
+function applyLinkedResultPrivacy(html) {
+    if (game.user?.isGM)
+        return;
+    for (const result of html.querySelectorAll(".card-summary[data-message-id], .status[data-message-id]")) {
+        const message = game.messages.get(result.dataset.messageId ?? "");
+        if (!message)
+            continue;
+        if (shouldHideForMe(message) || shouldHideBlindRollerCard(message)) {
+            if (!hiddenLinkedDisplays.has(result))
+                hiddenLinkedDisplays.set(result, result.style.getPropertyValue("display"));
+            result.style.setProperty("display", "none", "important");
+        }
+        else if (hiddenLinkedDisplays.has(result)) {
+            const previous = hiddenLinkedDisplays.get(result);
+            if (previous)
+                result.style.setProperty("display", previous);
+            else
+                result.style.removeProperty("display");
+            hiddenLinkedDisplays.delete(result);
+        }
+        if (shouldRedactResults(message))
+            redactRollResults(result, message);
+    }
+}
+function refreshLinkedResultCards(message, changed) {
+    const bsrPath = `flags.${MOD}`;
+    const privacyChanged = readChangedValue(changed, "blind") !== undefined || readChangedValue(changed, "whisper") !== undefined
+        || readChangedValue(changed, bsrPath) !== undefined
+        || (!!changed && typeof changed === "object" && Object.keys(changed).some(key => key.startsWith(`${bsrPath}.`)));
+    if (!privacyChanged)
+        return;
+    const parents = new Map();
+    for (const result of document.querySelectorAll(".card-summary[data-message-id], .status[data-message-id]")) {
+        if (result.dataset.messageId !== message.id)
+            continue;
+        const root = result.closest(".chat-message[data-message-id]");
+        const parent = root?.dataset.messageId ? game.messages.get(root.dataset.messageId) : null;
+        if (!root || !parent || parent.id === message.id)
+            continue;
+        applyLinkedResultPrivacy(root);
+        parents.set(parent.id, parent);
+    }
+    for (const parent of parents.values()) {
+        void ui.chat?.updateMessage?.(parent).catch(error => dbgWarn("chat-visibility | linked card refresh", error));
     }
 }
 // ---- Consolidated renderChatMessageHTML handler ----
@@ -503,6 +534,7 @@ Hooks.on("renderChatMessageHTML", (message, html) => {
     try {
         if (!html)
             return;
+        applyLinkedResultPrivacy(html);
         const isGM = !!game.user?.isGM;
         const isAuthor = !isGM && String(message.author?.id ?? '') === String(game.user?.id ?? '');
         const blind = isBsrBlind(message);
@@ -552,7 +584,7 @@ Hooks.on("renderChatMessageHTML", (message, html) => {
             const rollerSkipsRedaction = private_ && isAuthor;
             const revealed = isAuthor && message.getFlag?.(MOD, "revealedToRoller");
             if (!revealed && !rollerSkipsRedaction) {
-                redactBlindResults(html);
+                redactRollResults(html, message);
             }
         }
     }
@@ -564,6 +596,7 @@ Hooks.on("dnd5e.renderChatMessage", (message, html) => {
     try {
         if (!html || game.user?.isGM)
             return;
+        applyLinkedResultPrivacy(html);
         const blind = isBsrBlind(message);
         const private_ = isBsrPrivate(message);
         if (!blind && !private_)
@@ -583,7 +616,7 @@ Hooks.on("dnd5e.renderChatMessage", (message, html) => {
             return;
         if (private_ && isAuthor)
             return;
-        redactBlindResults(html);
+        redactRollResults(html, message);
     }
     catch (e) {
         dbgWarn("chat-visibility | dnd5e.renderChatMessage redaction", e);
@@ -672,8 +705,9 @@ Hooks.on("preUpdateChatMessage", (message, changed) => {
         dbgWarn("chat-visibility | preUpdateChatMessage public reveal", e);
     }
 });
-Hooks.on("updateChatMessage", (message) => {
+Hooks.on("updateChatMessage", (message, changed) => {
     try {
+        refreshLinkedResultCards(message, changed);
         if (isBsrSecret(message) && !isRevealedToCurrentUser(message))
             return;
         deferredSweep();

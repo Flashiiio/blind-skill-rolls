@@ -3,9 +3,11 @@ import { resolveAbilityCheckVisibility, buildMessageRecipients } from "../core/p
 import { normalizeAbilityId } from "../core/policy/ability-check-policy.js";
 import { setPendingAbilityCheck, peekPendingAbilityCheck, clearPendingAbilityCheck, clearPendingAbilityChecksForActor } from "../core/state/pending-ability-check.js";
 import { setDsnPendingMode } from "../core/state/pending-dsn.js";
+import { setDsnRollMode } from "../core/policy/dsn-visibility.js";
 import { guardedHookOnce } from "../core/state/roll-config-guard.js";
 import { setRollConfigSelectBlind, setRollConfigSelectPrivate } from "../ui/roll-config-dialog.js";
 import { dbgWarn } from "../debug/logger.js";
+import { getRollMetadata } from "../core/policy/roll-classification.js";
 const CHECK_BLIND_NOTE_KEY = "BSR.AbilityChecks.Note.BlindGMRoll";
 const CHECK_BLIND_NOTE_FB = "This ability check is configured for Blind GM Roll";
 const CHECK_PRIVATE_NOTE_KEY = "BSR.AbilityChecks.Note.PrivateGMRoll";
@@ -81,7 +83,7 @@ Hooks.on("dnd5e.postAbilityCheckRollConfiguration", (rolls, config, dialog, mess
         if (Array.isArray(rolls))
             for (const roll of rolls) {
                 if (roll?.options)
-                    roll.options.rollMode = vis.mode;
+                    setDsnRollMode(roll, vis.mode);
             }
         setPendingAbilityCheck(key, null, resolveActorId(config));
     }
@@ -91,26 +93,21 @@ Hooks.on("dnd5e.postAbilityCheckRollConfiguration", (rolls, config, dialog, mess
 });
 Hooks.on("preCreateChatMessage", (msg, data, options, userId) => {
     try {
-        const d5data = data?.flags?.dnd5e ?? {};
-        const d5doc = msg?.flags?.dnd5e ?? {};
-        const hasAbilityInfo = (o) => !!(o?.roll?.abilityId || o?.roll?.ability || o?.abilityId || o?.ability);
-        const hasSkillInfo = (o) => !!(o?.roll?.skillId || o?.roll?.skill || o?.skillId || o?.skill);
-        const d5 = hasAbilityInfo(d5data) ? d5data : (hasAbilityInfo(d5doc) ? d5doc : d5data);
-        const isDeath = d5?.roll?.type === "death" || d5?.type === "death" || d5?.rollType === "death";
-        if (isDeath || hasSkillInfo(d5data) || hasSkillInfo(d5doc))
+        const metadata = getRollMetadata(data);
+        const docMetadata = getRollMetadata(msg);
+        if (metadata.skill || docMetadata.skill || metadata.tool || docMetadata.tool)
             return;
         const author = userId ?? data?.author ?? msg?.author?.id ?? game.user?.id;
         const authorId = typeof author === "object" ? author.id : author;
         const actorId = msg?.speaker?.actor ?? data?.speaker?.actor ?? null;
         const pendingKey = peekPendingAbilityCheck(authorId, actorId);
-        const effectiveRollType = (d5data?.roll?.type ?? d5data?.type ?? d5data?.rollType)
-            ?? (d5doc?.roll?.type ?? d5doc?.type ?? d5doc?.rollType) ?? null;
+        const effectiveRollType = metadata.type ?? docMetadata.type;
         const rollType = typeof effectiveRollType === "string" ? effectiveRollType.toLowerCase().replace(/[-_\s]/g, "") : null;
-        if (rollType && !["ability", "abilitycheck", "check"].includes(rollType) && !pendingKey)
+        if (rollType && !["ability", "abilitycheck", "check"].includes(rollType))
             return;
         if (!rollType && !pendingKey)
             return;
-        let key = abilityIdFrom(d5?.roll?.abilityId, d5?.roll?.ability, d5?.roll?.context?.ability, d5?.abilityId, d5?.ability, d5?.context?.ability);
+        let key = abilityIdFrom(metadata.ability, docMetadata.ability);
         if (!key) {
             try {
                 for (const roll of (msg?.rolls ?? [])) {

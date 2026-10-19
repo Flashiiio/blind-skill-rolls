@@ -143,9 +143,11 @@ export function maskNativeCombatTracker(html) {
         if (actor?.type === "character")
             continue;
         if (!isNpcRevealed(actor, combatant.token ?? null)) {
-            const nameEl = entry.querySelector(".token-name h4") ?? entry.querySelector(".combatant-name") ?? entry.querySelector(".token-name");
+            const label = maskLabel();
+            const nameEl = entry.querySelector(".token-name > .name");
             if (nameEl)
-                nameEl.textContent = maskLabel();
+                nameEl.textContent = label;
+            entry.querySelector(".token-image")?.setAttribute("alt", label);
         }
     }
 }
@@ -168,7 +170,7 @@ export function markRevealedInCombatTracker(html) {
         if (!actor || actor.type === "character")
             continue;
         if (isNpcPermanentlyRevealed(actor)) {
-            const nameEl = entry.querySelector(".token-name h4") ?? entry.querySelector(".combatant-name") ?? entry.querySelector(".token-name");
+            const nameEl = entry.querySelector(".token-name > .name");
             if (nameEl && !nameEl.querySelector(".bsr-perm-badge")) {
                 const badge = document.createElement("i");
                 badge.className = "fa-solid fa-eye bsr-perm-badge";

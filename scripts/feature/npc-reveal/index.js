@@ -3,6 +3,7 @@ import { dbgWarn } from "../../debug/logger.js";
 import { FLAG_SCOPE, FLAG_KEY_REVEALED, FLAG_KEY_PERM_REVEALED, L, isGM, safeParse, resolveBaseActor, resolveActorFromKeys, isNpcPermanentlyRevealed } from "./reveal-state.js";
 import { attachKeys, applyMaskedName, installObserver, ensureToggleButton, updateButtonIcon, updatePermRevealBadge, refreshByKeys, toggleRevealFromLi } from "./chat-masking.js";
 import { forceRefreshCombatDock, refreshNativeCombatTracker, registerDockPatch, registerDockHooks, maskNativeCombatTracker, markRevealedInCombatTracker, addCombatTrackerToggleButtons } from "./combat-tracker.js";
+import { applyTargetNameMasking, installTargetNameObserver } from "./target-masking.js";
 // ---- Permanent Reveal Toggle ----
 async function togglePermanentReveal(actor) {
     if (!actor)
@@ -84,8 +85,10 @@ Hooks.on("getChatMessageContextOptions", (app, menuItems) => {
     });
 });
 // ---- Chat Message Rendering ----
-Hooks.on("renderChatMessageHTML", (message, li) => {
+function applyChatMasking(message, li) {
     try {
+        applyTargetNameMasking(message, li);
+        installTargetNameObserver(message, li);
         attachKeys(li, message);
         if (isGM())
             ensureToggleButton(li);
@@ -95,9 +98,11 @@ Hooks.on("renderChatMessageHTML", (message, li) => {
         updatePermRevealBadge(li);
     }
     catch (e) {
-        dbgWarn("npc-reveal | renderChatMessageHTML failed", e);
+        dbgWarn("npc-reveal | chat masking failed", e);
     }
-});
+}
+Hooks.on("renderChatMessageHTML", applyChatMasking);
+Hooks.on("dnd5e.renderChatMessage", applyChatMasking);
 // ---- Ready Hook: Click-Handler, Socket, Settings-Listener ----
 Hooks.once("ready", () => {
     const chatRoot = (ui?.chat?.element || document);
@@ -132,12 +137,15 @@ Hooks.once("ready", () => {
     setTimeout(() => { refreshByKeys(null); forceRefreshCombatDock(); refreshNativeCombatTracker(); }, 50);
 });
 // ---- Token/Actor Update Hooks ----
-Hooks.on("updateToken", (scene, token, diff) => {
+Hooks.on("updateToken", (token, diff) => {
     try {
         const fs = diff?.flags?.[FLAG_SCOPE];
         if (fs && Object.prototype.hasOwnProperty.call(fs, FLAG_KEY_REVEALED)) {
-            const tid = token._id || token.id;
-            refreshByKeys([`tid:${tid}`, `t:Scene.${scene.id}.Token.${tid}`]);
+            const tid = token.id;
+            const keys = [`tid:${tid}`];
+            if (token.parent?.id)
+                keys.push(`t:Scene.${token.parent.id}.Token.${tid}`);
+            refreshByKeys(keys);
             forceRefreshCombatDock();
             refreshNativeCombatTracker();
         }

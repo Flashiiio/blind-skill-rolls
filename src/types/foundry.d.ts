@@ -199,9 +199,6 @@ interface Dice3D {
     users?: string[] | null,
     blind?: boolean
   ): Promise<boolean>;
-  _showAnimation(notation: Record<string, unknown>, config?: Record<string, unknown>): Promise<boolean>;
-  _bsrShowWrapped?: boolean;
-  _bsrAnimWrapped?: boolean;
   [key: string]: unknown;
 }
 
@@ -224,6 +221,7 @@ interface CombatDock {
 
 interface ChatSidebar {
   readonly element: HTMLElement | null;
+  updateMessage?(message: ChatMessage): Promise<void>;
 }
 
 // =====================================================================

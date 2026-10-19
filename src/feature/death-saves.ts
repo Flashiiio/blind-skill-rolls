@@ -2,19 +2,15 @@ import { MOD, BLIND, GMROLL } from "../core/constants.js";
 import { resolveDeathSaveVisibility, buildMessageRecipients } from "../core/policy/roll-visibility.js";
 import { guardedHookOnce } from "../core/state/roll-config-guard.js";
 import { setDsnPendingMode } from "../core/state/pending-dsn.js";
+import { setDsnRollMode } from "../core/policy/dsn-visibility.js";
 import { setRollConfigSelectBlind, setRollConfigSelectPrivate } from "../ui/roll-config-dialog.js";
 import { dbgWarn } from "../debug/logger.js";
+import { isDeathSaveMessage } from "../core/policy/roll-classification.js";
 
 const DEATH_BLIND_NOTE_KEY = "BSR.DeathSaves.Note.BlindGMRoll";
 const DEATH_BLIND_NOTE_FB = "This death save is set to Blind GM Roll";
 const DEATH_PRIVATE_NOTE_KEY = "BSR.DeathSaves.Note.PrivateGMRoll";
 const DEATH_PRIVATE_NOTE_FB = "This death save is set to Private GM Roll";
-
-const isDeathSave = (msg: any): boolean => {
-  const d5 = msg?.flags?.dnd5e ?? {};
-  const t: string = d5?.roll?.type ?? d5?.type ?? d5?.rollType ?? "";
-  return t === "death";
-};
 
 const modeTag = (): string => String(game.settings.get(MOD, "bsrDeathSavesMode") || "blindroll").toLowerCase();
 
@@ -72,8 +68,17 @@ Hooks.on("dnd5e.preRollSavingThrowV2", (cfg: any, dialog: any, message: any) => 
   handleDeathSavePreRoll(cfg, dialog, message, "preRollSavingThrowV2 death save");
 });
 
-Hooks.on("preCreateChatMessage", (msg: any) => {
-  if (!isDeathSave(msg)) return;
+Hooks.on("dnd5e.postDeathSaveRollConfiguration", (rolls: unknown, _config: unknown, _dialog: unknown, message: { rollMode?: string } | undefined) => {
+  const vis = resolveDeathSaveVisibility();
+  if (!vis.mode) return;
+  if (message && typeof message === "object") message.rollMode = vis.mode;
+  if (Array.isArray(rolls)) for (const roll of rolls) {
+    if (roll?.options) setDsnRollMode(roll, vis.mode);
+  }
+});
+
+Hooks.on("preCreateChatMessage", (msg: any, data: any) => {
+  if (!isDeathSaveMessage(msg) && !isDeathSaveMessage(data)) return;
 
   const vis = resolveDeathSaveVisibility();
   if (!vis.mode) {

@@ -1,6 +1,6 @@
 # Blind Skill Rolls (Foundry VTT · dnd5e)
 
-[![stable](https://img.shields.io/github/v/release/GWagner2021/blind-skill-rolls.svg?label=stable&display_name=tag&sort=date&cacheSeconds=3600&_=20260302)](https://github.com/GWagner2021/blind-skill-rolls/releases/latest) ![downloads](https://img.shields.io/github/downloads/GWagner2021/blind-skill-rolls/total?label=downloads) ![license](https://img.shields.io/github/license/GWagner2021/blind-skill-rolls?label=license) [![discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/upVqdYqg4p)
+[![stable](https://img.shields.io/github/v/release/GWagner2021/blind-skill-rolls.svg?label=stable&display_name=tag&sort=date&cacheSeconds=3600&_=20260302)](https://github.com/GWagner2021/blind-skill-rolls/releases/latest) ![downloads](https://img.shields.io/github/downloads/GWagner2021/blind-skill-rolls/blind-skill-rolls.zip?label=downloads&displayAssetName=false) ![license](https://img.shields.io/github/license/GWagner2021/blind-skill-rolls?label=license) [![discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/upVqdYqg4p)
 
 Blind Skill Rolls gives you much finer control over what players are allowed to learn from rolls, chat messages, and NPC presentation in dnd5e.
 
@@ -50,13 +50,12 @@ Included languages are English, German, French, Spanish, Italian, Polish, and Ru
 
 ## 📋 Requirements
 
-- Foundry VTT **v14.363**
-- **dnd5e 5.3.3**
+- Foundry VTT **v14.369**
+- **dnd5e 6.0.6**
 
 ## 🧩 Compatible modules
 
 - **Dice So Nice**
-- **MidiQOL**
 - **Combat Tracker Dock**
 
 ## 📦 Installation

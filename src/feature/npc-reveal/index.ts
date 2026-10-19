@@ -17,6 +17,7 @@ import {
   maskNativeCombatTracker, markRevealedInCombatTracker,
   addCombatTrackerToggleButtons
 } from "./combat-tracker.js";
+import { applyTargetNameMasking, installTargetNameObserver } from "./target-masking.js";
 
 // ---- Permanent Reveal Toggle ----
 async function togglePermanentReveal(actor: any): Promise<void> {
@@ -90,8 +91,10 @@ Hooks.on("getChatMessageContextOptions", (app: any, menuItems: any[]) => {
 });
 
 // ---- Chat Message Rendering ----
-Hooks.on("renderChatMessageHTML", (message: any, li: HTMLElement) => {
+function applyChatMasking(message: ChatMessage, li: HTMLElement): void {
   try {
+    applyTargetNameMasking(message, li);
+    installTargetNameObserver(message, li);
     attachKeys(li, message);
     if (isGM()) ensureToggleButton(li);
     applyMaskedName(message, li);
@@ -99,9 +102,12 @@ Hooks.on("renderChatMessageHTML", (message: any, li: HTMLElement) => {
     updateButtonIcon(li);
     updatePermRevealBadge(li);
   } catch (e) {
-    dbgWarn("npc-reveal | renderChatMessageHTML failed", e);
+    dbgWarn("npc-reveal | chat masking failed", e);
   }
-});
+}
+
+Hooks.on("renderChatMessageHTML", applyChatMasking);
+Hooks.on("dnd5e.renderChatMessage", applyChatMasking);
 
 // ---- Ready Hook: Click-Handler, Socket, Settings-Listener ----
 Hooks.once("ready", () => {
@@ -130,12 +136,14 @@ Hooks.once("ready", () => {
 });
 
 // ---- Token/Actor Update Hooks ----
-Hooks.on("updateToken", (scene: any, token: any, diff: any) => {
+Hooks.on("updateToken", (token: TokenDocument, diff: { flags?: Record<string, Record<string, unknown>> }) => {
   try {
     const fs = diff?.flags?.[FLAG_SCOPE];
     if (fs && Object.prototype.hasOwnProperty.call(fs, FLAG_KEY_REVEALED)) {
-      const tid = token._id || token.id;
-      refreshByKeys([`tid:${tid}`, `t:Scene.${scene.id}.Token.${tid}`]);
+      const tid = token.id;
+      const keys = [`tid:${tid}`];
+      if (token.parent?.id) keys.push(`t:Scene.${token.parent.id}.Token.${tid}`);
+      refreshByKeys(keys);
       forceRefreshCombatDock();
       refreshNativeCombatTracker();
     }

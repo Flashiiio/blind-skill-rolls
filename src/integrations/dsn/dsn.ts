@@ -1,241 +1,67 @@
-import { peekPendingSkill } from "../../core/state/pending-skill.js";
-import { peekPendingSave } from "../../core/state/pending-save.js";
-import { consumeDsnPendingMode } from "../../core/state/pending-dsn.js";
-import { isPendingHiddenNpc } from "../../core/state/pending-hidden-npc.js";
-import { isSkillPrivate, isSkillBlind } from "../../core/policy/skill-policy.js";
-import { isSavePrivate, isSaveBlind } from "../../core/policy/save-policy.js";
-import { shouldHideForeignSecrets } from "../../core/policy/chat-privacy.js";
+import { MOD } from "../../core/constants.js";
+import { dsnRecord, getDsnAudience, getDsnDisplay, getDsnRecipients, readDsnAudience } from "../../core/policy/dsn-visibility.js";
+import { dbgWarn } from "../../debug/logger.js";
+import { openMute } from "../../feature/audio-suppression.js";
+import { installDsnDirectAdapter } from "./direct-rolls.js";
 
-Hooks.on("diceSoNiceRollStart", (messageID: string, context: any) => {
+interface DsnRollContext {
+  roll: { ghost?: boolean; secret?: boolean; options?: Record<string, unknown> };
+  dsnRoll?: { ghost?: boolean };
+  user?: User;
+  users?: (string | User)[] | null;
+  blind?: boolean;
+}
+
+Hooks.on("diceSoNiceMessagePreProcess", (messageId: string, interception: { willTrigger3DRoll: boolean }) => {
+  const audience = getDsnAudience(game.messages.get(messageId));
+  if (audience && getDsnDisplay(audience) === "none") interception.willTrigger3DRoll = false;
+});
+
+Hooks.on("diceSoNiceRollStart", (messageId: string | null, context: DsnRollContext) => {
   try {
-    if (!messageID) return;
-    const chatMessage = game.messages?.get?.(messageID) as any;
-    if (!chatMessage) return;
-
-    const bsrFlags = chatMessage.flags?.["blind-skill-rolls"];
-    const isGM     = game.user?.isGM === true;
-    const authorId = chatMessage.author?.id ?? chatMessage.author;
-    const isAuthor = game.user?.id === authorId;
-
-    // ── Blind rolls ──────────────────────────────────────────────────
-    if (bsrFlags?.bsrBlind || chatMessage.blind) {
-      if (!isGM && !isAuthor) {
-        context.blind = true;
-      }
-      return;
+    const message = messageId ? game.messages.get(messageId) : null;
+    const audience = message ? getDsnAudience(message) : readDsnAudience(context.roll, context.user);
+    if (!audience) return;
+    const display = getDsnDisplay(audience);
+    // An already blocked local call may still send real dice to its recipients.
+    if (!context.blind && display === "ghost") {
+      context.roll.ghost = true;
+      if (context.dsnRoll) context.dsnRoll.ghost = true;
     }
-
-    // ── BSR Private rolls ────────────────────
-    if (bsrFlags?.bsrPrivate) {
-      if (!isGM && !isAuthor) {
-        if (context.roll && typeof context.roll === "object") {
-          context.roll.ghost = true;
-        }
-      }
-      return;
-    }
-
-    // ── Native whisper messages ───────────────────────────────────────
-    const whisper: string[] = Array.isArray(chatMessage.whisper) ? chatMessage.whisper : [];
-    if (whisper.length > 0 && !isGM && !isAuthor) {
-      const me = game.user?.id;
-      if (me && !whisper.includes(me)) {
-        context.blind = true;
-      }
-    }
-  } catch { /* ignore */ }
+    if (display === "none") context.blind = true;
+    if (display === "ghost" && game.user?.id !== audience.authorId) openMute(2500);
+    // The public direct-call adapter handles synchronized per-client visibility.
+    const allowed = getDsnRecipients(audience, context.roll.ghost === true);
+    const supplied = context.users?.map(user => typeof user === "string" ? user : user.id);
+    const recipients = supplied?.length ? allowed.filter(id => supplied.includes(id)) : allowed;
+    context.users = recipients.length ? recipients : ["__bsr_no_recipients__"];
+  } catch (error) { dbgWarn("dsn | roll visibility failed", error); }
 });
 
-interface BlindSkillRollsMeta {
-  rollerId: string | undefined;
-  allowedUsers: string[] | null;
-  blockNonAllowed: boolean;
-}
+Hooks.on("preCreateChatMessage", (message: ChatMessage) => {
+  if (!getDsnAudience(message)) return;
+  // DSN's interactive path ignores RollStart's blind/ghost decisions.
+  message.updateSource({ "flags.dice-so-nice.interactive": false, "flags.dice-so-nice.interactiveThrow": null });
+});
 
-interface DiceNotation {
-  _blindSkillRolls?: BlindSkillRollsMeta;
-  throws?: Array<{ dice?: Array<{ options?: Record<string, unknown> }> }>;
-  [key: string]: unknown;
-}
-
-function markNotationAsGhost(notation: DiceNotation): void {
-  for (const throwData of notation?.throws ?? []) {
-    for (const die of throwData?.dice ?? []) {
-      if (!die || typeof die !== "object") continue;
-      if (!die.options || typeof die.options !== "object") die.options = {};
-      die.options.ghost = true;
-      die.options.bsrGhost = true;
-      delete die.options.secret;
+// Stamp each roll, rather than consuming a global "next animation" mode.
+for (const name of ["Skill", "AbilityCheck", "SavingThrow", "DeathSave", "Tool", "Attack", "Damage"]) {
+  Hooks.on(`dnd5e.post${name}RollConfiguration`, (rolls: unknown, config: unknown, _dialog: unknown, message: unknown) => {
+    const source = dsnRecord(message);
+    const subject = dsnRecord(dsnRecord(config).subject);
+    const actor = subject.documentName === "Actor" ? subject : dsnRecord(subject.actor);
+    const token = dsnRecord(actor.token);
+    if (!Array.isArray(rolls)) return;
+    for (const roll of rolls) {
+      const options = dsnRecord(dsnRecord(roll).options);
+      const mode = source.rollMode ?? options.rollMode;
+      const audience = token.hidden && actor.type !== "character" && mode === "blind" ? getDsnAudience({
+        author: game.user, blind: mode === "blind", whisper: [],
+        speaker: token.id && token.parent ? { scene: dsnRecord(token.parent).id, token: token.id } : undefined
+      }) : null;
+      if (audience) options[MOD] = { ...dsnRecord(options[MOD]), dsn: audience };
     }
-  }
-}
-
-function cloneNotation(notation: DiceNotation): DiceNotation {
-  if (!notation?.throws) return notation;
-  const clone: DiceNotation = { ...notation };
-  clone.throws = notation.throws.map(t => {
-    const tc = { ...t };
-    if (Array.isArray(t.dice)) {
-      tc.dice = t.dice.map(d => {
-        if (!d || typeof d !== "object") return d;
-        const dc = { ...d };
-        if (d.options && typeof d.options === "object") dc.options = { ...d.options };
-        return dc;
-      });
-    }
-    return tc;
   });
-  return clone;
 }
 
-function unmarkNotationGhost(notation: DiceNotation): DiceNotation {
-  const cloned = cloneNotation(notation);
-  for (const throwData of cloned?.throws ?? []) {
-    for (const die of throwData?.dice ?? []) {
-      if (!die?.options) continue;
-      if (die.options.bsrGhost) {
-        delete die.options.ghost;
-        delete die.options.bsrGhost;
-      }
-    }
-  }
-  return cloned;
-}
-
-function hasBsrGhostMarker(notation: DiceNotation): boolean {
-  for (const throwData of notation?.throws ?? []) {
-    for (const die of throwData?.dice ?? []) {
-      if (die?.options?.bsrGhost) return true;
-    }
-  }
-  return false;
-}
-
-const isPendingSkillPrivate = (): boolean => {
-  const key = peekPendingSkill();
-  return key ? isSkillPrivate(key) : false;
-};
-
-const isPendingSavePrivate = (): boolean => {
-  const key = peekPendingSave();
-  return key ? isSavePrivate(key) : false;
-};
-
-const isPendingSkillBlind = (): boolean => {
-  const key = peekPendingSkill();
-  return key ? isSkillBlind(key) : false;
-};
-
-const isPendingSaveBlind = (): boolean => {
-  const key = peekPendingSave();
-  return key ? isSaveBlind(key) : false;
-};
-
-Hooks.on("diceSoNiceReady", () => {
-  const dice3d = game.dice3d as any;
-  if (!dice3d) return;
-
-  if (!dice3d._bsrShowWrapped) {
-    dice3d._bsrShowWrapped = true;
-
-    const originalShow = dice3d.show;
-    dice3d.show = function (
-      data: DiceNotation,
-      user: { id?: string } | undefined,
-      synchronize: boolean,
-      users: string[] | undefined,
-      blind: boolean
-    ) {
-      let blockNonAllowed = true;
-      try {
-        const gmIds = (game.users?.filter((u: any) => u.isGM) ?? []).map((u: any) => u.id);
-        const rollerId = user?.id ?? game.user?.id;
-
-        const dsnMode = consumeDsnPendingMode();
-        const isBlindRoll = dsnMode === 'blind' || isPendingSkillBlind() || isPendingSaveBlind();
-        const isPrivateRoll = dsnMode === 'private' || isPendingSkillPrivate() || isPendingSavePrivate();
-
-        if (!blind && isPendingHiddenNpc()) {
-          users = gmIds;
-          blockNonAllowed = true;
-        }
-
-        if (isBlindRoll) {
-          blind = false;
-          users = Array.from(new Set([...gmIds, rollerId].filter(Boolean) as string[]));
-          blockNonAllowed = true;
-        }
-
-        if (!blind && isPrivateRoll) {
-          const authorizedUsers = Array.from(new Set([...gmIds, rollerId].filter(Boolean) as string[]));
-          if (shouldHideForeignSecrets()) {
-            users = authorizedUsers;
-            blockNonAllowed = true;
-          } else {
-            blockNonAllowed = false;
-            if (data && typeof data === "object") {
-              markNotationAsGhost(data);
-              data._blindSkillRolls = {
-                rollerId: user?.id ?? game.user?.id,
-                allowedUsers: authorizedUsers,
-                blockNonAllowed: false
-              };
-            }
-          }
-        }
-      } catch { /* ignore */ }
-
-      const isHiddenRoll =
-        blind === true ||
-        (Array.isArray(users) && !users.includes("all"));
-
-      if (isHiddenRoll && data && typeof data === "object" && !data._blindSkillRolls) {
-        data._blindSkillRolls = {
-          rollerId: user?.id,
-          allowedUsers: users ?? null,
-          blockNonAllowed
-        };
-      }
-      return originalShow.call(this, data, user, synchronize, users, blind);
-    };
-  }
-
-  if (!dice3d._bsrAnimWrapped) {
-    dice3d._bsrAnimWrapped = true;
-
-    const originalShowAnimation = dice3d._showAnimation;
-    dice3d._showAnimation = function (notation: DiceNotation, config: unknown) {
-      const meta = notation && notation._blindSkillRolls;
-
-      if (!meta) {
-        if (hasBsrGhostMarker(notation)) {
-          const local = game.user?.isGM === true ? unmarkNotationGhost(notation) : notation;
-          return originalShowAnimation.call(this, local, config);
-        }
-        return originalShowAnimation.call(this, notation, config);
-      }
-
-      const userId = game.user?.id;
-      const allowedUsers = Array.isArray(meta.allowedUsers) ? meta.allowedUsers : null;
-
-      if (allowedUsers) {
-        if (userId && allowedUsers.includes(userId)) {
-          const real = unmarkNotationGhost(notation);
-          return originalShowAnimation.call(this, real, config);
-        }
-        if (meta.blockNonAllowed) {
-          return Promise.resolve(false);
-        }
-        markNotationAsGhost(notation);
-        return originalShowAnimation.call(this, notation, config);
-      }
-
-      if (userId === meta.rollerId || game.user?.isGM === true) {
-        const real = unmarkNotationGhost(notation);
-        return originalShowAnimation.call(this, real, config);
-      }
-
-      return Promise.resolve(false);
-    };
-  }
-});
+Hooks.on("diceSoNiceReady", installDsnDirectAdapter);

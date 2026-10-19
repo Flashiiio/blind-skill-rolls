@@ -52,7 +52,6 @@ import "./feature/npc-reveal/index.js";
 import "./integrations/dsn/dsn.js";
 
 // ── 6. MidiQOL Fixes ──
-import "./integrations/midi-qol/dsn-fix.js";
 import "./integrations/midi-qol/npc-hidden-fix.js";
 import "./integrations/midi-qol/death-save-fix.js";
 import "./integrations/midi-qol/whisper-fixup.js";

@@ -1,3 +1,18 @@
+## [Unreleased]
+ -
+
+## [1.4.2] - 2026-10-19
+
+### Changed
+- Updated the module for Foundry VTT 14.369 and dnd5e 6.0.6.
+- Update Dice So Nice integration for DSN 6.4.4: use message-preprocess and roll-start hooks for visibility, replace obsolete `show` / `_showAnimation` overlays with a narrow public `showForRoll` adapter using native `animateRoll` for synchronized secret rolls.
+- Associate direct-roll privacy with the exact roll's serialized options instead of consuming a global next-animation mode. Coalesce concurrent direct calls only for the same roll object.
+
+### Fixed
+- Preserve native Foundry v14 combat-tracker buttons, effect icons/tooltips, and their event handlers when masking NPC names. Mask only the name label and portrait alternative text; keep GM, player-character, and revealed-NPC names visible.
+- Mask unrevealed NPC targets in dnd5e 6 attack and saving-throw cards, including grouped target menus, accessible labels, and embedded save/check summaries. Player-authored cards follow the target's reveal state independently of the sender.
+- Resolve chat tokens against their originating scene and refresh name visibility using the v14 `updateToken(token, changed, ...)` signature.
+
 ## [1.4.1] - 2026-05-23
 
 This release expands Blind Skill Rolls with ability check support and improves chat privacy.

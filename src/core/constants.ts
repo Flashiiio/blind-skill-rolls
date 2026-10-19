@@ -1,6 +1,6 @@
 export const MOD: string    = "blind-skill-rolls";
-export const BLIND: string  = "blindroll";
-export const GMROLL: string = "gmroll";
+export const BLIND: string  = "blind";
+export const GMROLL: string = "gm";
 
 export const PENDING_TIMEOUT_MS: number = 5000;
 

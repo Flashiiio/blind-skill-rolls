@@ -1,4 +1,5 @@
 import { MOD } from "../../core/constants.js";
+import { refreshTargetNames } from "./target-masking.js";
 import { FLAG_SCOPE, FLAG_KEY_REVEALED, maskLabel, L, isGM, uniq, safeParse, resolveActorFromKeys, resolveTokenFromKeys, isPureGMRoll, isRevealedForKeys, isNpcPermanentlyRevealed, clientShouldSeeRealName, docFromUuidSync } from "./reveal-state.js";
 // ---- Key-Attachment ----
 export function attachKeys(li, message) {
@@ -6,12 +7,14 @@ export function attachKeys(li, message) {
         return;
     const keys = [];
     const speaker = message?.speaker ?? {};
-    const actorDoc = message?.actor ?? null;
+    const actorDoc = message?.getAssociatedActor?.() ?? message?.speakerActor ?? message?.actor ?? null;
     const actorId = actorDoc?.id || speaker.actor || null;
     const actorName = actorDoc?.name || speaker.alias || "";
     const tokenId = speaker.token || null;
-    const uuidFromHeader = li.querySelector?.(".message-header a.avatar[data-uuid]")?.dataset?.uuid || "";
-    const tokenUuid = (tokenId && canvas?.scene) ? `Scene.${canvas.scene.id}.Token.${tokenId}` : "";
+    const headerTarget = li.querySelector(".message-header [data-token-uuid], .message-header [data-actor-uuid], .message-header a.avatar[data-uuid]");
+    const uuidFromHeader = headerTarget?.dataset.tokenUuid ?? headerTarget?.dataset.actorUuid ?? headerTarget?.dataset.uuid ?? "";
+    const sceneId = speaker.scene ?? canvas?.scene?.id ?? null;
+    const tokenUuid = message?.getAssociatedToken?.()?.uuid ?? ((tokenId && sceneId) ? `Scene.${sceneId}.Token.${tokenId}` : "");
     if (actorName)
         keys.push(`n:${actorName}`);
     if (actorId)
@@ -27,14 +30,20 @@ export function attachKeys(li, message) {
 }
 // ---- DOM-Helpers ----
 function findTitleNode(li) {
-    return li?.querySelector?.(".message-header .name-stacked .title") ?? null;
+    return li?.querySelector?.(".message-header .name-stacked .title")
+        ?? li?.querySelector?.(".message-header .message-sender") ?? null;
 }
 function setTitle(li, el, value) {
     try {
         if (!el || typeof value !== "string")
             return;
+        const portraits = li.querySelectorAll(".message-header .avatar img, .message-header .avatar video");
+        if (el.textContent === value && Array.from(portraits).every(portrait => portrait.getAttribute("alt") === value))
+            return;
         li.dataset.bsrGuard = "1";
-        el.textContent = value;
+        if (el.textContent !== value)
+            el.textContent = value;
+        portraits.forEach(portrait => portrait.setAttribute("alt", value));
         requestAnimationFrame(() => { delete li.dataset.bsrGuard; });
     }
     catch { /* ignore */ }
@@ -190,6 +199,7 @@ export function updatePermRevealBadge(li) {
 }
 // ---- Refresh ----
 export function refreshByKeys(filterKeys = null) {
+    refreshTargetNames();
     const list = ui?.chat?.element?.querySelector?.("ol.chat-log") || document.querySelector("ol.chat-log");
     if (!list)
         return;

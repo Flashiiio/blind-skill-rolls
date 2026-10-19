@@ -2,9 +2,11 @@ import { MOD, BLIND, GMROLL } from "../core/constants.js";
 import { resolveSkillVisibility, buildMessageRecipients } from "../core/policy/roll-visibility.js";
 import { setPendingSkill, peekPendingSkill, clearPendingSkill, clearPendingSkillsForActor } from "../core/state/pending-skill.js";
 import { setDsnPendingMode } from "../core/state/pending-dsn.js";
+import { setDsnRollMode } from "../core/policy/dsn-visibility.js";
 import { guardedHookOnce } from "../core/state/roll-config-guard.js";
 import { setRollConfigSelectBlind, setRollConfigSelectPrivate } from "../ui/roll-config-dialog.js";
 import { dbgWarn } from "../debug/logger.js";
+import { getRollMetadata } from "../core/policy/roll-classification.js";
 
 const SKILL_BLIND_NOTE_KEY = "BSR.Skills.Note.BlindGMRoll";
 const SKILL_BLIND_NOTE_FB = "This skill is configured for Blind GM Roll";
@@ -169,7 +171,7 @@ Hooks.on("dnd5e.postSkillRollConfiguration", (rolls: any, config: any, dialog: a
     }
 
     if (message && typeof message === "object") message.rollMode = vis.mode;
-    if (Array.isArray(rolls)) for (const roll of rolls) { if (roll?.options) roll.options.rollMode = vis.mode; }
+    if (Array.isArray(rolls)) for (const roll of rolls) { if (roll?.options) setDsnRollMode(roll, vis.mode); }
     setPendingSkill(key, null, resolveActorId(config));
   } catch (e) {
     dbgWarn("postSkillRollConfiguration", e);
@@ -179,19 +181,11 @@ Hooks.on("dnd5e.postSkillRollConfiguration", (rolls: any, config: any, dialog: a
 // ---- preCreateChatMessage (Skills) ----
 Hooks.on("preCreateChatMessage", (msg: any, data: any, options: any, userId: any) => {
   try {
-    const d5data = data?.flags?.dnd5e ?? {};
-    const d5doc = msg?.flags?.dnd5e ?? {};
-
-    const hasSkillInfo = (o: any): boolean => !!(o?.roll?.skillId || o?.roll?.skill || o?.roll?.context?.skill
-      || o?.skillId || o?.skill || o?.context?.skill);
-    const d5 = hasSkillInfo(d5data) ? d5data : (hasSkillInfo(d5doc) ? d5doc : d5data);
-
-    const isDeath = d5?.roll?.type === "death" || d5?.type === "death" || d5?.rollType === "death";
-    if (isDeath) return;
-
-    let key: string | null =
-      d5?.roll?.skillId ?? d5?.roll?.skill ?? d5?.roll?.context?.skill ??
-      d5?.skillId ?? d5?.skill ?? d5?.context?.skill ?? null;
+    const metadata = getRollMetadata(data);
+    const docMetadata = getRollMetadata(msg);
+    const type = metadata.type ?? docMetadata.type;
+    if (type && type !== "skill") return;
+    let key: string | null = metadata.skill ?? docMetadata.skill;
 
     if (!key) {
       try {
