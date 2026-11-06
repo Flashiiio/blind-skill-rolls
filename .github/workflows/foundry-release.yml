@@ -47,7 +47,7 @@ jobs:
           version_tag = f"v{version}"
 
           manifest_url = f"https://github.com/{repo}/releases/download/{version_tag}/module.json"
-          notes_url = "https://github.com/GWagner2021/blind-skill-rolls/blob/main/CHANGELOG.md"
+          notes_url = "https://github.com/Flashiiio/blind-skill-rolls/blob/main/CHANGELOG.md"
 
           release = {
               "version": version,

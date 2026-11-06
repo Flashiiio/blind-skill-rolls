@@ -1,5 +1,13 @@
 ## [Unreleased]
- -
+
+-
+
+
+## [1.4.3] - 2026-11-06
+
+### Changed
+- Updated GitHub links, badges, author metadata, license attribution, release workflow, and publishing instructions for the renamed Flashiiio account.
+- Updated the documented target environment to Foundry VTT 14.370
 
 ## [1.4.2] - 2026-10-19
 

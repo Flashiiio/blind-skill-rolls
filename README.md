@@ -1,6 +1,6 @@
-# Blind Skill Rolls (Foundry VTT · dnd5e)
+# Blind Skill Rolls
 
-[![stable](https://img.shields.io/github/v/release/GWagner2021/blind-skill-rolls.svg?label=stable&display_name=tag&sort=date&cacheSeconds=3600&_=20260302)](https://github.com/GWagner2021/blind-skill-rolls/releases/latest) ![downloads](https://img.shields.io/github/downloads/GWagner2021/blind-skill-rolls/blind-skill-rolls.zip?label=downloads&displayAssetName=false) ![license](https://img.shields.io/github/license/GWagner2021/blind-skill-rolls?label=license) [![discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/upVqdYqg4p)
+[![stable](https://img.shields.io/github/v/release/Flashiiio/blind-skill-rolls.svg?label=stable&display_name=tag&sort=date&cacheSeconds=3600&_=20260302)](https://github.com/Flashiiio/blind-skill-rolls/releases/latest) ![downloads](https://img.shields.io/github/downloads/Flashiiio/blind-skill-rolls/blind-skill-rolls.zip?label=downloads&displayAssetName=false) ![license](https://img.shields.io/github/license/Flashiiio/blind-skill-rolls?label=license) [![discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/upVqdYqg4p)
 
 Blind Skill Rolls gives you much finer control over what players are allowed to learn from rolls, chat messages, and NPC presentation in dnd5e.
 
@@ -12,7 +12,7 @@ The main features are described below, followed by additional helpers for hidden
 
 At its core, Blind Skill Rolls lets you decide that specific skill checks and saving throws should no longer behave like ordinary public rolls. You can configure each skill and each ability save individually and decide whether it should default to **Blind GM Roll** or **Private GM Roll**. That makes it much easier to keep checks like Insight, Investigation, Perception, or Stealth as well as important defensive saves under tighter control without changing the roll mode by hand every time. Blind and Private are handled as separate modes, so you can decide exactly how much the roller should still be allowed to see.
 
-[Blind & Private Rolls – Visibility Matrix](https://github.com/GWagner2021/blind-skill-rolls/wiki/Blind-&-Private-Rolls-%E2%80%93-Visibility-Matrix)
+[Blind & Private Rolls – Visibility Matrix](https://github.com/Flashiiio/blind-skill-rolls/wiki/Blind-&-Private-Rolls-%E2%80%93-Visibility-Matrix)
 
 ## 💀 Death save privacy
 
@@ -50,7 +50,7 @@ Included languages are English, German, French, Spanish, Italian, Polish, and Ru
 
 ## 📋 Requirements
 
-- Foundry VTT **v14.369**
+- Foundry VTT **v14.370**
 - **dnd5e 6.0.6**
 
 ## 🧩 Compatible modules
@@ -62,13 +62,13 @@ Included languages are English, German, French, Spanish, Italian, Polish, and Ru
 
 Manifest URL:
 
-`https://github.com/GWagner2021/blind-skill-rolls/releases/latest/download/module.json`
+`https://github.com/Flashiiio/blind-skill-rolls/releases/latest/download/module.json`
 
 ## 💁 Support
 
 Issues and feedback:
 
-`https://github.com/GWagner2021/blind-skill-rolls/issues`
+`https://github.com/Flashiiio/blind-skill-rolls/issues`
 
 Discord:
 
